@@ -1,0 +1,11 @@
+# 改行コードは LF に統一（GitHub Actions は Linux で実行されるため）
+* text=auto eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.txt text eol=lf
+*.html text eol=lf
+*.db binary
+*.pdf binary
