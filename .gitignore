@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# 秘密情報（絶対にコミットしない）
+.env
+
+# ログ
+monitor.log
+*.log
+
+# SQLite の一時ファイル（DB 本体 data/properties.db はコミットする）
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,78 @@
+name: あわら市 戸建て物件 監視
+
+on:
+  schedule:
+    # UTC 20:00 = 日本時間 翌日 05:00（アクセスが少ない早朝に実行）
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Discord へ送信せず動作確認する"
+        type: boolean
+        default: false
+      verbose:
+        description: "デバッグログを出す"
+        type: boolean
+        default: false
+
+# 前回データ(data/properties.db)をコミットするために書き込み権限が必要
+permissions:
+  contents: write
+
+# 実行が重ならないようにする（DB コミットの競合を防ぐ）
+concurrency:
+  group: awara-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Python をセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: ライブラリをインストール
+        run: pip install -r requirements.txt
+
+      - name: 監視を実行
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_ERROR_WEBHOOK_URL: ${{ secrets.DISCORD_ERROR_WEBHOOK_URL }}
+          MONITOR_DRY_RUN: ${{ inputs.dry_run }}
+          MONITOR_ENABLED_SOURCES: ${{ vars.MONITOR_ENABLED_SOURCES }}
+          MONITOR_SEND_MANUAL_REMINDER: ${{ vars.MONITOR_SEND_MANUAL_REMINDER }}
+        run: |
+          python main.py ${{ inputs.verbose && '--verbose' || '' }}
+
+      - name: データベースの変更をコミット
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/properties.db data/last_run_summary.md || true
+          if git diff --staged --quiet; then
+            echo "DB に変更なし"
+          else
+            git commit -m "chore: update property database [skip ci]"
+            # 別実行が先にコミットしていた場合に備えてリベースしてから push
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: 実行ログをアーティファクトに保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-run-${{ github.run_number }}
+          path: |
+            monitor.log
+            data/last_run_summary.md
+          retention-days: 30
+          if-no-files-found: warn
