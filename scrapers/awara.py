@@ -86,7 +86,10 @@ class AwaraScraper(BaseScraper):
             layout_text = texts[6]
             note = texts[7] if len(texts) > 7 else ""
 
-            if normalize.looks_excluded(town_raw, layout_text, note, keywords=("土地", "宅地", "マンション", "アパート")):
+            # 空き家バンクはほぼ戸建てだが、念のため非住宅を除外
+            if normalize.looks_excluded(
+                layout_text, note, keywords=("マンション", "アパート", "更地", "土地のみ", "店舗", "倉庫")
+            ):
                 continue
 
             address = f"福井県あわら市{town_raw}"
