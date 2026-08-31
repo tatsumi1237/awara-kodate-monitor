@@ -130,7 +130,10 @@ def parse_area_m2(text: str) -> Optional[float]:
     """
     if not text:
         return None
-    t = to_halfwidth(text).replace(",", "")
+    # <sup>2</sup> 由来の改行や空白（"169.77m\n2"）を除去してから判定する
+    t = re.sub(r"\s+", "", to_halfwidth(text).replace(",", ""))
+    # 範囲表記（"177.58m2～183.13m2"）は下限を採用
+    t = re.split(r"[~〜]", t)[0]
     m = re.search(r"(\d+(?:\.\d+)?)\s*(?:m2|m²|㎡|平米|平方メートル)", t)
     if m:
         return float(m.group(1))
