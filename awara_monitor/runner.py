@@ -49,7 +49,20 @@ def run(verbose: bool = False) -> int:
 
     from scrapers import build_scrapers  # 遅延 import（循環回避）
 
-    db = Database(config.DB_PATH)
+    # DRY-RUN では実データ(data/properties.db)を汚さないよう、コピーを使う
+    db_path = config.DB_PATH
+    if config.DRY_RUN:
+        import shutil
+        import tempfile
+
+        db_path = os.path.join(tempfile.gettempdir(), "awara_monitor_dryrun.db")
+        if os.path.exists(config.DB_PATH):
+            shutil.copy2(config.DB_PATH, db_path)
+        elif os.path.exists(db_path):
+            os.remove(db_path)
+        log.info("DRY-RUN: 一時DBを使用します（実DBは変更しません）: %s", db_path)
+
+    db = Database(db_path)
     db.init_schema()
 
     session = PoliteSession()
@@ -85,7 +98,8 @@ def run(verbose: bool = False) -> int:
     summary = _build_summary(started, scraped, ok_sources, errors, result, db)
     db.write_run_log(started, summary["raw"])
     _write_step_summary(summary["markdown"])
-    _write_run_summary_file(summary["markdown"])
+    if not config.DRY_RUN:
+        _write_run_summary_file(summary["markdown"])
 
     db.close()
 
@@ -99,19 +113,24 @@ def run(verbose: bool = False) -> int:
 
 
 def _notify(db, notifier: DiscordNotifier, result: RunResult, errors) -> None:
+    # DRY-RUN は「送信済み」を記録しない（実行しても本番通知が抑止されないように）
+    record = not notifier.dry_run
+
     for ev in result.new_properties:
         try:
             notifier.send_new_property(ev)
-            db.record_notification("new", ev.dedup_key())
+            if record:
+                db.record_notification("new", ev.dedup_key())
         except Exception:
             log.exception("新着通知の送信に失敗: property#%s", ev.internal_id)
 
     for ev in result.price_changes:
         try:
             notifier.send_price_change(ev)
-            db.record_notification(
-                "price_change", f"{ev.internal_id}:{ev.old_price}->{ev.new_price}"
-            )
+            if record:
+                db.record_notification(
+                    "price_change", f"{ev.internal_id}:{ev.old_price}->{ev.new_price}"
+                )
         except Exception:
             log.exception("価格変更通知の送信に失敗: property#%s", ev.internal_id)
 
@@ -119,7 +138,8 @@ def _notify(db, notifier: DiscordNotifier, result: RunResult, errors) -> None:
         if db.should_send_error(source, config.ERROR_NOTIFY_COOLDOWN_HOURS):
             try:
                 notifier.send_error(source, message)
-                db.record_notification("error", source)
+                if record:
+                    db.record_notification("error", source)
             except Exception:
                 log.exception("エラー通知の送信に失敗: %s", source)
         else:
