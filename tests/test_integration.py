@@ -45,6 +45,25 @@ def test_full_flow_two_days(db, fake_geocoder):
     assert not r3.new_properties and not r3.price_changes
 
 
+def test_dry_run_notify_does_not_record(db, fake_geocoder):
+    """dry-run で _notify しても「送信済み」を記録しない（本番通知が抑止されない）。"""
+    from awara_monitor import runner
+
+    result = pipeline.run(db, run1_data(), {"awara", "suumo"}, fake_geocoder)
+    assert len(result.new_properties) == 2
+
+    dry = DiscordNotifier(webhook_url="", dry_run=True)
+    runner._notify(db, dry, result, [])
+    assert len(dry.sent) == 2
+    for ev in result.new_properties:
+        assert db.was_notified("new", ev.dedup_key()) is False
+
+    live = DiscordNotifier(webhook_url="", dry_run=False)
+    runner._notify(db, live, result, [])
+    for ev in result.new_properties:
+        assert db.was_notified("new", ev.dedup_key()) is True
+
+
 def test_error_cooldown(db):
     from awara_monitor import config
 
